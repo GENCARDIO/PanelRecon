@@ -1,0 +1,4 @@
+*.fastq.gz
+*.bed
+RUN20260217-CGC64001/
+*.2bit
