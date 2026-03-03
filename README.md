@@ -10,6 +10,14 @@ PanelRecon compares the k-mer diversity in each sample against a precomputed pan
 Top-scoring panels are identified based on the number of weighed supporting k-mers. Highly shared kmers across panels are penalized.
 For high-scoring panel candidates (≥95% similarity), a further refining step is performed relying on panel-specific k-mers.
 
+
+PanelRecon ranks panels with an f-score (`beta = 2`):  
+- **score** = `(1 + beta^2) * (panelCoverage * specificityPrecision) / (beta^2 * specificityPrecision + panelCoverage)`.
+
+Where,
+- **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`,
+- **specificityPrecision**: is the fraction of matched weighted k-mer evidence assigned to that panel (shared k-mers are penalized). A higher score means the panel is both broadly covered and more specific to the sample.
+
 ## Installation
 
 - To install `zlib` and `htslib`
