@@ -58,8 +58,66 @@ struct KmerBuildResult {
     std::size_t maxRegionsPerKmer = 0;
 };
 
+void addSelectedKmer(std::uint64_t encodedKmer,
+                     std::unordered_map<std::uint64_t, std::uint32_t>& kmerOccurrenceCount,
+                     std::unordered_set<std::uint64_t>& regionSeenKmers,
+                     std::size_t& totalKmers) {
+    kmerOccurrenceCount[encodedKmer] = kmerOccurrenceCount[encodedKmer] + 1;
+    totalKmers = totalKmers + 1;
+    regionSeenKmers.insert(encodedKmer);
+}
+
+void addSelectedKmersFromSegment(
+    const std::vector<std::uint64_t>& segmentKmers, std::size_t minimizerWindow,
+    std::unordered_map<std::uint64_t, std::uint32_t>& kmerOccurrenceCount,
+    std::unordered_set<std::uint64_t>& regionSeenKmers, std::size_t& totalKmers) {
+    if (segmentKmers.empty()) {
+        return;
+    }
+
+    if (minimizerWindow <= 1 || segmentKmers.size() == 1) {
+        for (std::size_t j = 0; j < segmentKmers.size(); j = j + 1) {
+            addSelectedKmer(segmentKmers[j], kmerOccurrenceCount, regionSeenKmers, totalKmers);
+        }
+        return;
+    }
+
+    if (segmentKmers.size() < minimizerWindow) {
+        std::uint64_t minValue = segmentKmers[0];
+        for (std::size_t j = 1; j < segmentKmers.size(); j = j + 1) {
+            if (segmentKmers[j] < minValue) {
+                minValue = segmentKmers[j];
+            }
+        }
+        addSelectedKmer(minValue, kmerOccurrenceCount, regionSeenKmers, totalKmers);
+        return;
+    }
+
+    const std::size_t noPickedIndex = static_cast<std::size_t>(-1);
+    std::size_t lastPickedIndex = noPickedIndex;
+    for (std::size_t start = 0; start + minimizerWindow <= segmentKmers.size();
+         start = start + 1) {
+        std::size_t minIndex = start;
+        std::uint64_t minValue = segmentKmers[start];
+        std::size_t end = start + minimizerWindow;
+        for (std::size_t j = start + 1; j < end; j = j + 1) {
+            if (segmentKmers[j] < minValue) {
+                minValue = segmentKmers[j];
+                minIndex = j;
+            }
+        }
+
+        if (minIndex == lastPickedIndex) {
+            continue;
+        }
+
+        addSelectedKmer(minValue, kmerOccurrenceCount, regionSeenKmers, totalKmers);
+        lastPickedIndex = minIndex;
+    }
+}
+
 KmerBuildResult buildUniqueKmerLookup(const std::string& bedFile, RefFasta& reference,
-                                      int kmerSize) {
+                                      int kmerSize, std::size_t minimizerWindow) {
     KmerBuildResult result;
     std::unordered_map<std::uint64_t, std::uint32_t> kmerOccurrenceCount;
     std::unordered_map<std::uint64_t, std::uint32_t> kmerRegionCount;
@@ -123,18 +181,23 @@ KmerBuildResult buildUniqueKmerLookup(const std::string& bedFile, RefFasta& refe
         result.regionsWithKmers = result.regionsWithKmers + 1;
         std::unordered_set<std::uint64_t> regionSeenKmers;
         regionSeenKmers.reserve(sequence.size() - k + 1);
+        std::vector<std::uint64_t> segmentKmers;
+        segmentKmers.reserve(sequence.size() - k + 1);
 
         for (std::size_t startPos = 0; startPos + k <= sequence.size(); startPos = startPos + 1) {
             std::uint64_t encodedKmer = 0;
             bool ok = encodeKmerAt(sequence, startPos, k, encodedKmer);
             if (!ok) {
+                addSelectedKmersFromSegment(segmentKmers, minimizerWindow, kmerOccurrenceCount,
+                                            regionSeenKmers, result.totalKmers);
+                segmentKmers.clear();
                 continue;
             }
 
-            kmerOccurrenceCount[encodedKmer] = kmerOccurrenceCount[encodedKmer] + 1;
-            result.totalKmers = result.totalKmers + 1;
-            regionSeenKmers.insert(encodedKmer);
+            segmentKmers.push_back(encodedKmer);
         }
+        addSelectedKmersFromSegment(segmentKmers, minimizerWindow, kmerOccurrenceCount,
+                                    regionSeenKmers, result.totalKmers);
 
         for (const auto& encodedKmer : regionSeenKmers) {
             kmerRegionCount[encodedKmer] = kmerRegionCount[encodedKmer] + 1;
@@ -272,6 +335,9 @@ int runIndexCommand(int argc, char** argv) {
     parser.add("fasta", "Input FASTA file path", "--fasta", true);
     parser.add("output_dir", "Directory for outputs", "--output_dir", true);
     parser.add("kmer_size", "K-mer size (positive integer, default: 31)", "--kmer_size", false);
+    parser.add("minimizer_window",
+               "Minimizer window size in k-mers for indexing (default: 1, disabled)",
+               "--minimizer_window", false);
 
     if (!parser.parse()) {
         return 1;
@@ -287,8 +353,17 @@ int runIndexCommand(int argc, char** argv) {
     std::string fasta = parser.get<std::string>("fasta");
     std::string outputDir = parser.get<std::string>("output_dir");
     int kmerSize = 31;
+    std::size_t minimizerWindow = 1;
     if (parser.parsed("kmer_size")) {
         kmerSize = parser.get<int>("kmer_size");
+    }
+    if (parser.parsed("minimizer_window")) {
+        long long value = parser.get<long long>("minimizer_window");
+        if (value < 1) {
+            std::cerr << "minimizer_window must be >= 1\n";
+            return 1;
+        }
+        minimizerWindow = static_cast<std::size_t>(value);
     }
 
     if (kmerSize < 1 || kmerSize > 32) {
@@ -308,6 +383,7 @@ int runIndexCommand(int argc, char** argv) {
     }
 
     std::cout << "[index] start fasta=" << fasta << " k=" << kmerSize
+              << " minimizer_window=" << minimizerWindow
               << " panels=" << bedPaths.size() << " output_dir=" << outputDir << "\n";
 
     RefFasta reference(fasta);
@@ -331,7 +407,8 @@ int runIndexCommand(int argc, char** argv) {
         std::cout << "[index] panel " << (bedId + 1) << "/" << bedPaths.size()
                   << " " << bedPath << "\n";
 
-        KmerBuildResult buildResult = buildUniqueKmerLookup(bedPath, reference, kmerSize);
+        KmerBuildResult buildResult =
+            buildUniqueKmerLookup(bedPath, reference, kmerSize, minimizerWindow);
 
         std::string bitFilePath;
         bool wroteFile =

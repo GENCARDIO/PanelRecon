@@ -4,6 +4,7 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -33,6 +34,7 @@ struct PairSpecificPassScores {
     std::uint64_t secondTotal = 0;
 };
 
+// Return the DNA complement for one base.
 char complementBase(char base) {
     switch (base) {
         case 'A':
@@ -54,25 +56,31 @@ char complementBase(char base) {
     }
 }
 
-void reverseComplementInPlace(std::string& sequence) {
-    if (sequence.empty()) {
-        return;
-    }
+// Build the reverse-complement sequence.
+std::string reverseComplement(std::string& sequence) {
+    std::string reverseComplement = "";
 
-    std::size_t left = 0;
-    std::size_t right = sequence.size() - 1;
-    while (left < right) {
-        char leftComplement = complementBase(sequence[left]);
-        char rightComplement = complementBase(sequence[right]);
-        sequence[left] = rightComplement;
-        sequence[right] = leftComplement;
-        left = left + 1;
-        right = right - 1;
-    }
-
-    if (left == right) {
-        sequence[left] = complementBase(sequence[left]);
-    }
+    for (int i = sequence.size()-1; i >= 0; i--) {
+        char base = std::toupper(sequence[i]);
+        char compBase;
+        if (base == 'A') {
+            compBase = 'T';
+        }
+        if (base == 'C') {
+            compBase = 'G';
+        }
+        if (base == 'T') {
+            compBase = 'A';
+        }
+        if (base == 'G') {
+            compBase = 'C';
+        }
+        if (base == 'N') {
+            compBase = 'N';
+        }
+        reverseComplement += compBase;
+    }   
+    return reverseComplement;
 }
 
 struct SampleFqEntry {
@@ -83,6 +91,7 @@ struct SampleFqEntry {
     bool hasFq2 = false;
 };
 
+// Check if a string ends with a given suffix.
 bool endsWith(const std::string& value, const std::string& suffix) {
     if (suffix.size() > value.size()) {
         return false;
@@ -90,6 +99,7 @@ bool endsWith(const std::string& value, const std::string& suffix) {
     return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
+// Derive a normalized sample key from a FASTQ filename.
 std::string deriveSampleKeyFromFastqPath(const std::string& fastqPath) {
     std::string name = std::filesystem::path(fastqPath).filename().string();
     if (endsWith(name, ".gz")) {
@@ -147,6 +157,7 @@ std::string deriveSampleKeyFromFastqPath(const std::string& fastqPath) {
     return name;
 }
 
+// Read the FASTQ list file (exactly one FASTQ path per non-comment line).
 bool loadFastqListFile(const std::string& listPath, std::vector<SampleFqEntry>& entries) {
     namespace fs = std::filesystem;
     entries.clear();
@@ -158,7 +169,10 @@ bool loadFastqListFile(const std::string& listPath, std::vector<SampleFqEntry>& 
     }
 
     std::string line;
+
+    // To track which file lines may have issues
     std::size_t lineNumber = 0;
+
     while (std::getline(in, line)) {
         lineNumber = lineNumber + 1;
         std::string trimmed = utils::trimWhitespace(line);
@@ -176,21 +190,15 @@ bool loadFastqListFile(const std::string& listPath, std::vector<SampleFqEntry>& 
         if (tokens.empty()) {
             continue;
         }
-        if (tokens.size() > 2) {
+        if (tokens.size() != 1) {
             std::cerr << "Invalid FASTQ list line " << lineNumber
-                      << ": expected one or two paths, got " << tokens.size() << "\n";
+                      << ": expected exactly one path, got " << tokens.size() << "\n";
             return false;
         }
 
         SampleFqEntry entry;
         entry.fq1 = utils::resolveListPathEntry(listPath, tokens[0]);
-        if (tokens.size() == 2) {
-            entry.fq2 = utils::resolveListPathEntry(listPath, tokens[1]);
-            entry.hasFq2 = true;
-            entry.label = fs::path(entry.fq1).stem().string() + "+" + fs::path(entry.fq2).stem().string();
-        } else {
-            entry.label = fs::path(entry.fq1).stem().string();
-        }
+        entry.label = fs::path(entry.fq1).stem().string();
         entry.sampleKey = deriveSampleKeyFromFastqPath(entry.fq1);
         if (entry.sampleKey.empty()) {
             entry.sampleKey = entry.label;
@@ -226,6 +234,7 @@ bool loadFastqListFile(const std::string& listPath, std::vector<SampleFqEntry>& 
     return true;
 }
 
+// Count how many FASTQ files are present across all input entries.
 std::size_t countInputFastqFiles(const std::vector<SampleFqEntry>& sampleFqs) {
     std::size_t totalFastqFiles = 0;
     for (std::size_t i = 0; i < sampleFqs.size(); i = i + 1) {
@@ -248,8 +257,6 @@ struct PanelRankRecord {
     bool minReadsReached = false;
     bool maxReadsReached = false;
     std::uint64_t bestMatchedKmers = 0;
-    std::uint64_t bestReadsWithMatch = 0;
-    double bestReadSupportPercent = 0.0;
     std::uint64_t bestCoveredIndexKmers = 0;
     double bestPanelKmerExtentPercent = 0.0;
     double bestIndexUniqueToPanelPercent = 0.0;
@@ -259,12 +266,10 @@ struct PanelRankRecord {
 struct PanelCandidateMetrics {
     std::size_t panelId = 0;
     double candidateScore = 0.0;
-    double readSupportPercent = 0.0;
     double indexUniqueToPanelPercent = 0.0;
     double indexMeanPanelsPerKmer = 0.0;
     double panelKmerExtentPercent = 0.0;
     std::uint64_t matchedKmers = 0;
-    std::uint64_t readsWithMatch = 0;
     std::uint64_t coveredIndexKmers = 0;
 };
 
@@ -277,9 +282,6 @@ struct PanelCandidateComparator {
         }
         if (left.coveredIndexKmers != right.coveredIndexKmers) {
             return left.coveredIndexKmers > right.coveredIndexKmers;
-        }
-        if (left.readsWithMatch != right.readsWithMatch) {
-            return left.readsWithMatch > right.readsWithMatch;
         }
         return panelNames[left.panelId] < panelNames[right.panelId];
     }
@@ -307,22 +309,11 @@ struct FindSampleContext {
 
 struct FindSampleState {
     std::vector<std::uint64_t> panelMatchedKmers;
-    std::vector<std::uint64_t> panelReadsWithMatch;
-    std::vector<std::uint32_t> panelSeenEpoch;
     std::unordered_set<std::uint64_t> matchedLookupKmers;
     std::uint64_t totalReads = 0;
-    std::uint32_t readEpoch = 0;
 };
 
-void advanceReadEpoch(FindSampleState& state) {
-    if (state.readEpoch == UINT32_MAX) {
-        std::fill(state.panelSeenEpoch.begin(), state.panelSeenEpoch.end(), 0);
-        state.readEpoch = 1;
-    } else {
-        state.readEpoch = state.readEpoch + 1;
-    }
-}
-
+// Compute Shannon entropy of one encoded k-mer using cached contributions.
 double calculateKmerEntropy(std::uint64_t encodedKmer, std::size_t k, const std::array<double, 33>& entropyContributionByCount) {
     std::array<std::uint8_t, 4> baseCounts = {0, 0, 0, 0};
     for (std::size_t i = 0; i < k; i = i + 1) {
@@ -335,6 +326,7 @@ double calculateKmerEntropy(std::uint64_t encodedKmer, std::size_t k, const std:
            entropyContributionByCount[baseCounts[2]] + entropyContributionByCount[baseCounts[3]];
 }
 
+// Return true when a k-mer should be filtered as low complexity.
 bool shouldSkipKmerAsLowComplexity(std::uint64_t encodedKmer, const FindSampleContext& context) {
     if (!context.useLowComplexityFilter) {
         return false;
@@ -344,6 +336,7 @@ bool shouldSkipKmerAsLowComplexity(std::uint64_t encodedKmer, const FindSampleCo
     return entropy < context.minKmerEntropy;
 }
 
+// Update per-panel counters for one k-mer hit.
 void processEncodedKmerHit(std::uint64_t encodedKmer, const FindSampleContext& context,
                            FindSampleState& state) {
     if (shouldSkipKmerAsLowComplexity(encodedKmer, context)) {
@@ -361,13 +354,10 @@ void processEncodedKmerHit(std::uint64_t encodedKmer, const FindSampleContext& c
     for (std::size_t j = 0; j < panelIds.size(); j = j + 1) {
         std::size_t panelId = panelIds[j];
         state.panelMatchedKmers[panelId] = state.panelMatchedKmers[panelId] + 1;
-        if (state.panelSeenEpoch[panelId] != state.readEpoch) {
-            state.panelSeenEpoch[panelId] = state.readEpoch;
-            state.panelReadsWithMatch[panelId] = state.panelReadsWithMatch[panelId] + 1;
-        }
     }
 }
 
+// Process one contiguous k-mer segment (all k-mers or minimizers only).
 void processKmerSegment(const std::vector<std::uint64_t>& segmentKmers, const FindSampleContext& context,
                         FindSampleState& state) {
     if (segmentKmers.empty()) {
@@ -415,13 +405,12 @@ void processKmerSegment(const std::vector<std::uint64_t>& segmentKmers, const Fi
     }
 }
 
-void processSequenceForPanels(const std::string& sequence, const FindSampleContext& context,
+// Scan one read sequence and feed valid k-mer segments to panel matching.
+void processSequence(const std::string& sequence, const FindSampleContext& context,
                               FindSampleState& state) {
     if (sequence.size() < context.k) {
         return;
     }
-
-    advanceReadEpoch(state);
 
     std::uint64_t rollingKmer = 0;
     std::size_t validRun = 0;
@@ -450,6 +439,7 @@ void processSequenceForPanels(const std::string& sequence, const FindSampleConte
     processKmerSegment(segmentKmers, context, state);
 }
 
+// Check if a panel id is present in a k-mer panel-id list.
 bool panelSetContains(const std::vector<std::size_t>& panelIds, std::size_t panelId) {
     for (std::size_t i = 0; i < panelIds.size(); i = i + 1) {
         if (panelIds[i] == panelId) {
@@ -459,6 +449,7 @@ bool panelSetContains(const std::vector<std::size_t>& panelIds, std::size_t pane
     return false;
 }
 
+// Re-score top-2 panels using k-mers present in exactly one of the two.
 PairSpecificPassScores runPairSpecificSecondPass(
     std::size_t firstPanelId, std::size_t secondPanelId,
     const std::unordered_map<std::uint64_t, std::vector<std::size_t>>& globalLookup,
@@ -509,7 +500,8 @@ PairSpecificPassScores runPairSpecificSecondPass(
     return result;
 }
 
-bool processFastqForPanels(const std::string& path, bool reverseComplementReads,
+// Stream one FASTQ file and update panel matching state.
+bool processFastq(const std::string& path, bool reverseComplementReads,
                            const FindSampleContext& context, FindSampleState& state,
                            bool ignoreMaxReadsLimit) {
     fastq::FastqReader reader(path);
@@ -519,7 +511,7 @@ bool processFastqForPanels(const std::string& path, bool reverseComplementReads,
     }
 
     fastq::FastqRecord record;
-    // Simple loop for beginners: one FASTQ record at a time.
+    
     while (true) {
         if (!ignoreMaxReadsLimit && state.totalReads >= context.maxReads) {
             break;
@@ -538,22 +530,21 @@ bool processFastqForPanels(const std::string& path, bool reverseComplementReads,
         }
 
         if (reverseComplementReads) {
-            reverseComplementInPlace(record.sequence);
+            record.sequence = reverseComplement(record.sequence);
         }
         state.totalReads = state.totalReads + 1;
-        processSequenceForPanels(record.sequence, context, state);
+        processSequence(record.sequence, context, state);
     }
 
     return true;
 }
 
+// Analyze one sample entry and compute panel ranking metrics.
 bool scanOneSampleFq(const SampleFqEntry& sampleFq, std::size_t sampleOrdinal,
                      std::size_t totalSamples,
                      const FindSampleContext& context, PanelRankRecord& rankRecord) {
     FindSampleState state;
     state.panelMatchedKmers.assign(context.panelNames.size(), 0);
-    state.panelReadsWithMatch.assign(context.panelNames.size(), 0);
-    state.panelSeenEpoch.assign(context.panelNames.size(), 0);
 
     std::string sampleName = sampleFq.sampleKey.empty() ? sampleFq.label : sampleFq.sampleKey;
     std::cout << " INFO: (" << sampleOrdinal << "/" << totalSamples << ") " << sampleName
@@ -571,7 +562,7 @@ bool scanOneSampleFq(const SampleFqEntry& sampleFq, std::size_t sampleOrdinal,
 
     if (!sampleFq.fq1.empty()) {
         std::uint64_t readsBefore = state.totalReads;
-        bool ok = processFastqForPanels(sampleFq.fq1, false, context, state, false);
+        bool ok = processFastq(sampleFq.fq1, false, context, state, false);
         if (!ok) {
             return false;
         }
@@ -586,7 +577,7 @@ bool scanOneSampleFq(const SampleFqEntry& sampleFq, std::size_t sampleOrdinal,
         } else {
             bool ignoreMaxReadsForFq2 = context.forcePaired && (state.totalReads >= context.maxReads);
             std::uint64_t readsBefore = state.totalReads;
-            bool ok = processFastqForPanels(sampleFq.fq2, true, context, state, ignoreMaxReadsForFq2);
+            bool ok = processFastq(sampleFq.fq2, true, context, state, ignoreMaxReadsForFq2);
             if (!ok) {
                 return false;
             }
@@ -628,7 +619,6 @@ bool scanOneSampleFq(const SampleFqEntry& sampleFq, std::size_t sampleOrdinal,
         PanelCandidateMetrics metrics;
         metrics.panelId = i;
         metrics.matchedKmers = state.panelMatchedKmers[i];
-        metrics.readsWithMatch = state.panelReadsWithMatch[i];
         metrics.coveredIndexKmers = panelCoveredIndexKmers[i];
 
         double panelCoverage = 0.0;
@@ -657,11 +647,6 @@ bool scanOneSampleFq(const SampleFqEntry& sampleFq, std::size_t sampleOrdinal,
             metrics.candidateScore = 0.0;
         }
 
-        if (state.totalReads > 0) {
-            metrics.readSupportPercent =
-                (100.0 * static_cast<double>(metrics.readsWithMatch)) /
-                static_cast<double>(state.totalReads);
-        }
         if (context.panelIndexUniqueKmers[i] > 0) {
             metrics.indexUniqueToPanelPercent =
                 (100.0 * static_cast<double>(context.panelIndexUniqueToPanel[i])) /
@@ -682,9 +667,27 @@ bool scanOneSampleFq(const SampleFqEntry& sampleFq, std::size_t sampleOrdinal,
         panelCandidates[1].candidateScore > 0.0 &&
         panelCandidates[1].candidateScore >=
             (panelCandidates[0].candidateScore * kSecondPassScoreRatioTrigger)) {
+        std::size_t firstPanelId = panelCandidates[0].panelId;
+        std::size_t secondPanelId = panelCandidates[1].panelId;
         PairSpecificPassScores secondPassScores =
-            runPairSpecificSecondPass(panelCandidates[0].panelId, panelCandidates[1].panelId,
+            runPairSpecificSecondPass(firstPanelId, secondPanelId,
                                      context.globalLookup, state.matchedLookupKmers);
+
+        if (secondPassScores.firstTotal == 0) {
+            std::cout << " WARNING: \t" << sampleName
+                      << " second_pass=pair_specific"
+                      << " panel_a=" << context.panelNames[firstPanelId]
+                      << " no_pair_specific_kmers_found=true"
+                      << std::endl;
+        }
+        if (secondPassScores.secondTotal == 0) {
+            std::cout << " WARNING: \t" << sampleName
+                      << " second_pass=pair_specific"
+                      << " panel_b=" << context.panelNames[secondPanelId]
+                      << " no_pair_specific_kmers_found=true"
+                      << std::endl;
+        }
+
         if (secondPassScores.firstTotal > 0 || secondPassScores.secondTotal > 0) {
             panelCandidates[0].candidateScore = secondPassScores.firstScore;
             panelCandidates[1].candidateScore = secondPassScores.secondScore;
@@ -721,8 +724,6 @@ bool scanOneSampleFq(const SampleFqEntry& sampleFq, std::size_t sampleOrdinal,
         rankRecord.bestScore = best.candidateScore;
         rankRecord.scoreMarginVsNext = scoreMargin;
         rankRecord.bestMatchedKmers = best.matchedKmers;
-        rankRecord.bestReadsWithMatch = best.readsWithMatch;
-        rankRecord.bestReadSupportPercent = best.readSupportPercent;
         rankRecord.bestCoveredIndexKmers = best.coveredIndexKmers;
         rankRecord.bestPanelKmerExtentPercent = best.panelKmerExtentPercent;
         rankRecord.bestIndexUniqueToPanelPercent = best.indexUniqueToPanelPercent;
@@ -745,6 +746,7 @@ bool scanOneSampleFq(const SampleFqEntry& sampleFq, std::size_t sampleOrdinal,
     return true;
 }
 
+// Entry point for the `find` command.
 int runFindCommand(int argc, char** argv) {
     namespace fs = std::filesystem;
 
@@ -752,7 +754,7 @@ int runFindCommand(int argc, char** argv) {
     parser.add("index_dir", "Directory containing .bit/.2bit panel index files", "--index_dir", true);
     parser.add("fq1", "FASTQ read1 file (plain or .gz)", "--fq1", false);
     parser.add("fq2", "FASTQ read2 file (plain or .gz)", "--fq2", false);
-    parser.add("fastq_list", "Text file with one FASTQ path (or fq1 fq2 pair) per line",
+    parser.add("fastq_list", "Text file with exactly one FASTQ path per line",
                "--fastq_list", false);
     parser.add("min_reads", "Minimum reads target to scan (default: 50000)", "--min_reads", false);
     parser.add("max_reads", "Maximum reads to scan before stopping (default: 1000000)", "--max_reads",

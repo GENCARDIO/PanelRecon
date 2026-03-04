@@ -11,7 +11,7 @@ Top-scoring panels are identified based on the number of weighed supporting k-me
 For high-scoring panel candidates (≥95% similarity), a further refining step is performed relying on panel-specific k-mers.
 
 
-PanelRecon ranks panels with an f-score (`beta = 2`):  
+PanelRecon ranks panels using an fscore-like:
 - **score** = `(1 + beta^2) * (panelCoverage * specificityPrecision) / (beta^2 * specificityPrecision + panelCoverage)`.
 
 Where,
@@ -56,8 +56,14 @@ make
   [--bed panel.bed | --bed_list beds.txt] \
   --fasta reference.fa \
   --output_dir /path/to/panel_index_dir \
-  --kmer_size 31 (default is 31)
+  --kmer_size 31 \
+  --minimizer_window 1
 ```
+
+`index` minimizer notes:
+- `--minimizer_window` controls k-mer subsampling while building indexes.
+- Default is `1` (disabled, keep all k-mers).
+- Values `> 1` keep minimizers per window and reduce index size.
 
 ### `2. find`
 
@@ -78,6 +84,8 @@ Example with a list of fastqs `--fastq_list`:
   --fastq_list fastq_list.txt \
   --output /path/to/output_ranks.tsv
 ```
+
+`fastq_list.txt` must contain exactly one FASTQ file path per line.
 
 ## Output
 

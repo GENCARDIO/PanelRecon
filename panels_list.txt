@@ -10,3 +10,5 @@
 /home/bdelolmo/Documents/PanelRecon/Sudd.v4.arrh_str_hs.Covered.hg19.bed
 /home/bdelolmo/Documents/PanelRecon/sudd.v4.str_hs_3_1_Covered.hg19.bed
 /home/bdelolmo/Documents/PanelRecon/S31285117_Covered.bed
+/home/bdelolmo/Documents/PanelRecon/HF3.ROI.bed
+/home/bdelolmo/Documents/PanelRecon/3528311_Covered.bed
