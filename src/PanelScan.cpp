@@ -40,7 +40,7 @@ struct SampleScanState {
 struct PanelSupportStats {
     std::vector<std::uint64_t> panelCoveredKmers;
     std::vector<double> panelCoveredSpecificityMass;
-    double totalMatchedLookupKmers = 0.0;
+    double matchedLookupKmerCount = 0.0;
 };
 
 // Hold the score and summary metrics for one candidate panel.
@@ -367,7 +367,7 @@ static PanelSupportStats buildPanelSupportStats(const PanelIndexStruct& panelInd
     PanelSupportStats supportStats;
     supportStats.panelCoveredKmers.assign(panelIndex.panelNames.size(), 0);
     supportStats.panelCoveredSpecificityMass.assign(panelIndex.panelNames.size(), 0.0);
-    supportStats.totalMatchedLookupKmers =
+    supportStats.matchedLookupKmerCount =
         static_cast<double>(state.matchedLookupKmers.size());
 
     for (const auto& encodedKmer : state.matchedLookupKmers) {
@@ -410,10 +410,10 @@ static std::vector<PanelCandidateMetrics> buildPanelCandidates(
         }
 
         double panelSpecificSupport = 0.0;
-        if (supportStats.totalMatchedLookupKmers > 0.0) {
+        if (supportStats.matchedLookupKmerCount > 0.0) {
             panelSpecificSupport =
                 supportStats.panelCoveredSpecificityMass[i] /
-                supportStats.totalMatchedLookupKmers;
+                supportStats.matchedLookupKmerCount;
         }
 
         if (panelIndex.panelIndexUniqueKmers[i] > 0) {
