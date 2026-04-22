@@ -122,19 +122,21 @@ PanelRecon compares sample k-mers against a precomputed panel k-mer index.
 
 ### Scoring
 
-- **score** = `100 * (1 + beta^2) * panelCoverage * specificityPrecision / (beta^2 * specificityPrecision + panelCoverage)`
+- **score**:
 
-For each panel, `find` command calculates:
-- **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`
+$$
+100 \times \frac{(1 + \beta^2) \times panelCoverage \times specificityPrecision}{(\beta^2 \times specificityPrecision) + panelCoverage}
+$$
+
+Where,
+- **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`. 
 - **specificityPrecision** = `panel_weighted_support / total_matched_lookup_kmers`
-
-The score combines these two parameters within an F-score-like formula:
 
 - `panelCoverage` representes panels where many indexed k-mers were observed in the sample. It is calculated as `covered_panel_kmers / panel_unique_kmers`, where
  `covered_panel_kmers` represents number of distinct indexed k-mers from that panel that were found in the sample.
-- `specificityPrecision` represents panels supported by more panel-specific k-mers, where `panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel (e.g. a k-mer found in a single panel contributes `1.0`; a k-mer found in four panels contributes `0.25` to each panel)
+- `specificityPrecision` represents panels supported by more panel-specific k-mers, where `panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel (e.g. a k-mer found in a single panel contributes `1.0`; a k-mer found in four panels contributes `0.25` to each panel because, controlled by `total_matched_lookup_kmers`).
 
-Panel coverage is weighted twice (`beta = 2`) compared to kmer specificity, so panels with a broader kmer coverage are prioritizized.
+`panelCoverage` is weighted twice (`beta = 2`) compared to kmer specificity, so panels with a broader kmer coverage are prioritizized.
 Panels with many shared kmers across different panels are penalized.
 
 
