@@ -409,9 +409,9 @@ static std::vector<PanelCandidateMetrics> buildPanelCandidates(
                             static_cast<double>(panelIndex.panelIndexUniqueKmers[i]);
         }
 
-        double specificityPrecision = 0.0;
+        double panelSpecificSupport = 0.0;
         if (supportStats.totalMatchedLookupKmers > 0.0) {
-            specificityPrecision =
+            panelSpecificSupport =
                 supportStats.panelCoveredSpecificityMass[i] /
                 supportStats.totalMatchedLookupKmers;
         }
@@ -423,10 +423,10 @@ static std::vector<PanelCandidateMetrics> buildPanelCandidates(
         }
 
         const double betaSquared = kFscoreBeta * kFscoreBeta;
-        const double denominator = (betaSquared * specificityPrecision) + panelCoverage;
+        const double denominator = (betaSquared * panelSpecificSupport) + panelCoverage;
         if (denominator > 0.0) {
             metrics.candidateScore =
-                100.0 * (1.0 + betaSquared) * specificityPrecision * panelCoverage / denominator;
+                100.0 * (1.0 + betaSquared) * panelSpecificSupport * panelCoverage / denominator;
         }
         else {
             metrics.candidateScore = 0.0;
