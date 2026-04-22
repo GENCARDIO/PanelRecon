@@ -124,20 +124,19 @@ PanelRecon compares sample k-mers against a precomputed panel k-mer index.
 
 - **score**:
 
-$$
+$$ 
 100 \times \frac{(1 + \beta^2) \times panelCoverage \times specificityPrecision}{(\beta^2 \times specificityPrecision) + panelCoverage}
 $$
 
-Where,
-- **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`. 
-- **specificityPrecision** = `panel_weighted_support / total_matched_lookup_kmers`
+where:
 
-- `panelCoverage` representes panels where many indexed k-mers were observed in the sample. It is calculated as `covered_panel_kmers / panel_unique_kmers`, where
- `covered_panel_kmers` represents number of distinct indexed k-mers from that panel that were found in the sample.
-- `specificityPrecision` represents panels supported by more panel-specific k-mers, where `panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel (e.g. a k-mer found in a single panel contributes `1.0`; a k-mer found in four panels contributes `0.25` to each panel because, controlled by `total_matched_lookup_kmers`).
+- **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`. This rewards panels where many indexed k-mers were observed in the sample.
+- **specificityPrecision** = `panel_weighted_support / total_matched_lookup_kmers`. This rewards panels supported by more panel-specific k-mers.
 
-`panelCoverage` is weighted twice (`beta = 2`) compared to kmer specificity, so panels with a broader kmer coverage are prioritizized.
-Panels with many shared kmers across different panels are penalized.
+`covered_panel_kmers` is the number of distinct indexed k-mers from that panel found in the sample.
+`panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel: a k-mer found in one panel contributes `1.0`, while a k-mer found in four panels contributes `0.25` to each panel.
+
+With `beta = 2`, `panelCoverage` is weighted more strongly than `specificityPrecision`, so panels with broader k-mer coverage are prioritized. Panels supported mostly by k-mers shared across many panels are penalized.
 
 
 ### Second pass
@@ -148,7 +147,11 @@ If the top two panels are very close:
 
 PanelRecon then re-scores only that top pair using only k-mers that appear in exactly one of those two panels:
 
-- **pair-specific score** = `covered_pair_specific_kmers / total_pair_specific_kmers`
+- **pair-specific score**:
+
+$$
+\frac{covered\_pair\_specific\_kmers}{total\_pair\_specific\_kmers}
+$$
 
 Those pair-specific scores replace the primary scores for the top two panels before the final ranking is reported.
 
