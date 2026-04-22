@@ -134,7 +134,7 @@ where:
 `covered_panel_kmers` is the number of distinct indexed k-mers from that panel found in the sample.
 `panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel: a k-mer found in one panel contributes `1.0`, while a k-mer found in four panels contributes `0.25` to each panel.
 
-With `beta = 2`, `panelCoverage` is weighted more strongly than `panelSpecificSupport`, so panels with broader k-mer coverage are prioritized. Panels supported mostly by k-mers shared across many panels are penalized.
+With `beta = 2`, the score emphasizes `panelCoverage` over `panelSpecificSupport`. The `(1 + beta^2)` term scales the score, while the `beta^2` term in the denominator controls the coverage/support tradeoff. Panels supported mostly by k-mers shared across many panels are still penalized through lower `panelSpecificSupport`.
 
 
 ### Second pass
