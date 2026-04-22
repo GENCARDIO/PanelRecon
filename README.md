@@ -122,19 +122,21 @@ PanelRecon compares sample k-mers against a precomputed panel k-mer index.
 
 ### Scoring
 
+- **score** = `100 * (1 + beta^2) * panelCoverage * specificityPrecision / (beta^2 * specificityPrecision + panelCoverage)`
+
 For each panel, `find` command calculates:
 - **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`
 - **specificityPrecision** = `panel_weighted_support / total_matched_lookup_kmers`
 
-The score combines those two values within an F-score-like formula:
+The score combines these two parameters within an F-score-like formula:
 
-- `panelCoverage` rewards panels where many indexed k-mers were observed in the sample. It is calculated as `covered_panel_kmers / panel_unique_kmers`, where
+- `panelCoverage` representes panels where many indexed k-mers were observed in the sample. It is calculated as `covered_panel_kmers / panel_unique_kmers`, where
  `covered_panel_kmers` represents number of distinct indexed k-mers from that panel that were found in the sample.
-- `specificityPrecision` rewards panels supported by more panel-specific k-mers, where `panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel. A k-mer found in only one panel contributes `1.0`; a k-mer found in four panels contributes `0.25` to each panel.
+- `specificityPrecision` represents panels supported by more panel-specific k-mers, where `panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel (e.g. a k-mer found in a single panel contributes `1.0`; a k-mer found in four panels contributes `0.25` to each panel)
 
-With `beta = 2`, panel coveraged is weighted twice compared to kmer specificity. This makes the score prefer panels that are broadly covered by the sample, while still penalizing panels whose evidence is mostly shared with many other panels.
+Panel coverage is weighted twice (`beta = 2`) compared to kmer specificity, so panels with a broader kmer coverage are prioritizized.
+Panels with many shared kmers across different panels are penalized.
 
-- **score** = `100 * (1 + beta^2) * panelCoverage * specificityPrecision / (beta^2 * specificityPrecision + panelCoverage)`
 
 ### Second pass
 
@@ -152,20 +154,30 @@ Those pair-specific scores replace the primary scores for the top two panels bef
 
 PanelRecon only reports a panel call when the final score is at least `--min_score`.
 The default is `0.001`. Scores below this threshold are kept in the output for review,
-but `best_panel` is reported as `none`. This is useful for negative controls, where a
-few shared or noisy k-mers can otherwise force a very weak panel assignment.
+but `best_panel` is reported as `none`.
 
 ## Evaluation
 
 PanelRecon was evaluated on 57 samples with known expected panel assignments, including
 3 negative controls expected to return `none`. The evaluation scanned each sample at
-1,000, 5,000, 10,000, 30,000, 50,000, and 100,000 reads.
+1, 5, 10, 30, 50, and 100 K reads.
 
-Accuracy improved with read depth and reached 100% at 30,000 reads. At lower read
-depths, some related panels were still difficult to distinguish because limited reads
+Accuracy improved with read depth and reached 100% at 30k reads. At lower read usage
+, some highly related panels were still difficult to distinguish because limited reads
 covered fewer panel-specific k-mers.
 
 ![PanelRecon accuracy by read count](img/evaluation_accuracy_by_read_count.png)
+
+Runtime increased with the number of reads scanned. Index runtime loading is stable
+across runs, while the find/scanning phase increases with read depth.
+
+![PanelRecon runtime by read count](img/evaluation_runtime_by_read_count.png)
+
+Peak memory stays nearly constant across read depths, around 3.69 GB in this local
+evaluation. This indicates that memory usage is mostly driven by loading the panel
+k-mer index rather than by the number of reads scanned.
+
+![PanelRecon memory by read count](img/evaluation_memory_by_read_count.png)
 
 The per-sample heatmap shows correctness for each sample and read depth. Samples are
 grouped by expected gene panel, and the top annotation row shows the expected panel
@@ -173,14 +185,3 @@ for each sample. The negative controls are grouped under the `Negative control` 
 in the expected-panel legend.
 
 ![PanelRecon per-sample correctness heatmap](img/evaluation_sample_correctness_heatmap.png)
-
-Runtime increased with the number of reads scanned. Index loading was relatively
-stable across runs, while the find/scanning phase increased with read depth.
-
-![PanelRecon runtime by read count](img/evaluation_runtime_by_read_count.png)
-
-Peak memory stayed nearly constant across read depths, around 3.69 GB in this local
-evaluation. This indicates that memory usage is mostly driven by loading the panel
-k-mer index rather than by the number of reads scanned.
-
-![PanelRecon memory by read count](img/evaluation_memory_by_read_count.png)
