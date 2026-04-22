@@ -1,3 +1,4 @@
+// Intent: build per-panel k-mer index files from BED intervals and the reference FASTA.
 #include <algorithm>
 #include <array>
 #include <climits>
@@ -16,37 +17,42 @@
 #include "utils.hpp"
 
 
-// namespace {
 
-bool baseTo2bit(char base, std::uint64_t& code) {
+// Convert a DNA base into its 2-bit.
+bool baseTo2bit(char base, std::uint64_t& baseCode) {
+    // Lookup table that maps each possible input byte to a base code.
     const std::array<std::uint8_t, 256>& lookup = utils::baseTo2bitLookup();
+    // Cast to unsigned char so the character value is safe to use as an array index.
     unsigned char baseIndex = base;
     std::uint8_t value = lookup[baseIndex];
+    // Values above 3 mark bases that are not valid for 2-bit A,C,T,G encoding.
     if (value > 3) {
         return false;
     }
-    code = value;
+    // Return the valid 2-bit base code to the caller.
+    baseCode = value;
     return true;
 }
 
-bool encodeKmerAt(const std::string& sequence, std::size_t startPos, std::size_t kmerSize,
+// Encode the k-mer starting at the given position, failing on non-ACGT bases.
+bool encodeKmer(const std::string& sequence, std::size_t startPos, std::size_t kmerSize,
                   std::uint64_t& encodedKmer) {
     encodedKmer = 0;
 
     for (std::size_t i = 0; i < kmerSize; i = i + 1) {
-        std::uint64_t code = 0;
-        bool ok = baseTo2bit(sequence[startPos + i], code);
+        std::uint64_t baseCode = 0;
+        bool ok = baseTo2bit(sequence[startPos + i], baseCode);
         if (!ok) {
             return false;
         }
 
-        encodedKmer = (encodedKmer << 2) | code;
+        encodedKmer = (encodedKmer << 2) | baseCode;
     }
 
     return true;
 }
 
-struct KmerBuildResult {
+struct KmerIndexBuildResult {
     std::unordered_set<std::uint64_t> uniqueKmers;
     std::size_t regionsWithKmers = 0;
     std::size_t totalKmers = 0;
@@ -58,6 +64,7 @@ struct KmerBuildResult {
     std::size_t maxRegionsPerKmer = 0;
 };
 
+// Record one selected k-mer for global and per-region counting.
 void addSelectedKmer(std::uint64_t encodedKmer,
                      std::unordered_map<std::uint64_t, std::uint32_t>& kmerOccurrenceCount,
                      std::unordered_set<std::uint64_t>& regionSeenKmers,
@@ -67,6 +74,7 @@ void addSelectedKmer(std::uint64_t encodedKmer,
     regionSeenKmers.insert(encodedKmer);
 }
 
+// Select k-mers from one valid sequence segment
 void addSelectedKmersFromSegment(
     const std::vector<std::uint64_t>& segmentKmers, std::size_t minimizerWindow,
     std::unordered_map<std::uint64_t, std::uint32_t>& kmerOccurrenceCount,
@@ -116,9 +124,10 @@ void addSelectedKmersFromSegment(
     }
 }
 
-KmerBuildResult buildUniqueKmerLookup(const std::string& bedFile, RefFasta& reference,
-                                      int kmerSize, std::size_t minimizerWindow) {
-    KmerBuildResult result;
+// Build the unique k-mer set for regions in a BED file.
+KmerIndexBuildResult buildUniqueKmerLookup(const std::string& bedFile, RefFasta& reference,
+                                           int kmerSize, std::size_t minimizerWindow) {
+    KmerIndexBuildResult result;
     std::unordered_map<std::uint64_t, std::uint32_t> kmerOccurrenceCount;
     std::unordered_map<std::uint64_t, std::uint32_t> kmerRegionCount;
 
@@ -186,10 +195,10 @@ KmerBuildResult buildUniqueKmerLookup(const std::string& bedFile, RefFasta& refe
 
         for (std::size_t startPos = 0; startPos + k <= sequence.size(); startPos = startPos + 1) {
             std::uint64_t encodedKmer = 0;
-            bool ok = encodeKmerAt(sequence, startPos, k, encodedKmer);
+            bool ok = encodeKmer(sequence, startPos, k, encodedKmer);
             if (!ok) {
-                addSelectedKmersFromSegment(segmentKmers, minimizerWindow, kmerOccurrenceCount,
-                                            regionSeenKmers, result.totalKmers);
+                addSelectedKmersFromSegment(segmentKmers, 
+                    minimizerWindow, kmerOccurrenceCount, regionSeenKmers, result.totalKmers);
                 segmentKmers.clear();
                 continue;
             }
@@ -233,6 +242,7 @@ KmerBuildResult buildUniqueKmerLookup(const std::string& bedFile, RefFasta& refe
     return result;
 }
 
+// Write the encoded k-mer index to a binary .2bit file.
 bool writeBitIndexFile(const std::unordered_set<std::uint64_t>& kmerLookup, int kmerSize,
                        const std::string& bedFile, const std::string& outputDir,
                        std::string& outputPath) {
@@ -291,6 +301,7 @@ bool writeBitIndexFile(const std::unordered_set<std::uint64_t>& kmerLookup, int 
     return true;
 }
 
+// Load BED file paths from a text list, ignoring blank and comment lines.
 bool loadBedListFile(const std::string& listPath, std::vector<std::string>& bedPaths) {
     bedPaths.clear();
 
@@ -317,6 +328,7 @@ bool loadBedListFile(const std::string& listPath, std::vector<std::string>& bedP
     return true;
 }
 
+// Return the expected .2bit output path for a BED file.
 std::string panelIndexPathForBed(const std::string& bedPath, const std::string& outputDir) {
     namespace fs = std::filesystem;
     std::string panelName = fs::path(bedPath).stem().string();
@@ -328,6 +340,7 @@ std::string panelIndexPathForBed(const std::string& bedPath, const std::string& 
 
 // }
 
+// Parse index arguments and build panel indexes from one or more BED files.
 int runIndexCommand(int argc, char** argv) {
     cmd_line_parser::parser parser(argc, argv);
     parser.add("bed", "Input BED file path", "--bed", false);
@@ -407,7 +420,7 @@ int runIndexCommand(int argc, char** argv) {
         std::cout << "[index] panel " << (bedId + 1) << "/" << bedPaths.size()
                   << " " << bedPath << "\n";
 
-        KmerBuildResult buildResult =
+        KmerIndexBuildResult buildResult =
             buildUniqueKmerLookup(bedPath, reference, kmerSize, minimizerWindow);
 
         std::string bitFilePath;

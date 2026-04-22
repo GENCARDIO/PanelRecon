@@ -1,3 +1,4 @@
+// Intent: provide one reader for plain-text and gzipped FASTQ files.
 #include "FastqReader.hpp"
 
 #include <filesystem>

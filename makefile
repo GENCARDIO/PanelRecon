@@ -4,7 +4,7 @@ HTSLIB_CFLAGS := $(shell command -v pkg-config >/dev/null 2>&1 && pkg-config --c
 HTSLIB_LIBS := $(shell command -v pkg-config >/dev/null 2>&1 && pkg-config --libs htslib)
 CPPFLAGS = -Iinclude $(HTSLIB_CFLAGS)
 TARGET = PanelRecon
-SRC = PanelRecon.cpp src/PanelIndex.cpp src/PanelFind.cpp src/utils.cpp src/FastqReader.cpp src/RefFasta.cpp
+SRC = PanelRecon.cpp $(wildcard src/*.cpp)
 HEADERS = $(wildcard include/*.hpp) $(wildcard include/*.h)
 
 ifeq ($(strip $(HTSLIB_LIBS)),)

@@ -1,3 +1,4 @@
+// Intent: wrap indexed reference FASTA access through htslib faidx.
 #include "RefFasta.h"
 #include <stdexcept>
 

@@ -1,3 +1,4 @@
+// Intent: hold shared small helpers used across indexing and finding.
 #include "utils.hpp"
 
 #include <cctype>
@@ -23,11 +24,50 @@ std::array<std::uint8_t, 256> createBaseTo2bitLookup() {
     return lookup;
 }
 
+char complementBase(char base) {
+    switch (base) {
+        case 'A':
+        case 'a':
+            return 'T';
+        case 'C':
+        case 'c':
+            return 'G';
+        case 'G':
+        case 'g':
+            return 'C';
+        case 'T':
+        case 't':
+        case 'U':
+        case 'u':
+            return 'A';
+        default:
+            return 'N';
+    }
+}
+
 }  // namespace
 
 const std::array<std::uint8_t, 256>& baseTo2bitLookup() {
     static const std::array<std::uint8_t, 256> lookup = createBaseTo2bitLookup();
     return lookup;
+}
+
+bool endsWith(const std::string& value, const std::string& suffix) {
+    if (suffix.size() > value.size()) {
+        return false;
+    }
+    return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::string reverseComplement(const std::string& sequence) {
+    std::string result;
+    result.reserve(sequence.size());
+
+    for (std::size_t i = sequence.size(); i > 0; i = i - 1) {
+        result.push_back(complementBase(sequence[i - 1]));
+    }
+
+    return result;
 }
 
 std::string trimWhitespace(const std::string& value) {

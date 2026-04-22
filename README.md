@@ -1,22 +1,48 @@
 # PanelRecon
 
-`PanelRecon` is a fast and highly sensitive tool to assign the most likely gene panel or exome to each fastq pair.
+`PanelRecon` is a fast and highly sensitive tool to assign the most likely gene panel or exome to each FASTQ sample.
 
 ![PanelRecon overview](img/PanelRecon.png)
 
 ## How it works
 
-PanelRecon compares the k-mer diversity in each sample against a precomputed panel k-mer index.
-Top-scoring panels are identified based on the number of weighed supporting k-mers. Highly shared kmers across panels are penalized.
-For high-scoring panel candidates (≥95% similarity), a further refining step is performed relying on panel-specific k-mers.
+PanelRecon compares sample k-mers against a precomputed panel k-mer index.
 
 
-PanelRecon ranks panels using an fscore-like:
-- **score** = `(1 + beta^2) * (panelCoverage * specificityPrecision) / (beta^2 * specificityPrecision + panelCoverage)`.
+### Scoring
 
-Where,
-- **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`,
-- **specificityPrecision**: is the fraction of matched weighted k-mer evidence assigned to that panel (shared k-mers are penalized). A higher score means the panel is both broadly covered and more specific to the sample.
+For each panel, `find` command calculates:
+- **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`
+- **specificityPrecision** = `panel_weighted_support / total_matched_lookup_kmers`
+
+The score combines those two values within an F-score-like formula:
+
+- `panelCoverage` rewards panels where many indexed k-mers were observed in the sample. It is calculated as `covered_panel_kmers / panel_unique_kmers`, where
+ `covered_panel_kmers` represents number of distinct indexed k-mers from that panel that were found in the sample.
+- `specificityPrecision` rewards panels supported by more panel-specific k-mers, where `panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel. A k-mer found in only one panel contributes `1.0`; a k-mer found in four panels contributes `0.25` to each panel.
+
+With `beta = 2`, panel coveraged is weighted twice compared to kmer specificity. This makes the score prefer panels that are broadly covered by the sample, while still penalizing panels whose evidence is mostly shared with many other panels.
+
+- **score** = `100 * (1 + beta^2) * panelCoverage * specificityPrecision / (beta^2 * specificityPrecision + panelCoverage)`
+
+### Second pass
+
+If the top two panels are very close:
+- both must have a positive primary score
+- panel 2 must score at least `95%` of panel 1
+
+PanelRecon then re-scores only that top pair using only k-mers that appear in exactly one of those two panels:
+
+- **pair-specific score** = `covered_pair_specific_kmers / total_pair_specific_kmers`
+
+Those pair-specific scores replace the primary scores for the top two panels before the final ranking is reported.
+
+### Minimum score
+
+PanelRecon only reports a panel call when the final score is at least `--min_score`.
+The default is `0.001`. Scores below this threshold are kept in the output for review,
+but `best_panel` is reported as `none`. This is useful for negative controls, where a
+few shared or noisy k-mers can otherwise force a very weak panel assignment.
 
 ## Installation
 
@@ -28,7 +54,7 @@ sudo apt-get install -y build-essential pkg-config zlib1g-dev libhts-dev
 
 Requirements:
 
-- C++17 compiler such as g++-
+- C++17 compiler such as `g++`.
 - `make`.
 - `htslib`.
 - `zlib`.
@@ -46,7 +72,7 @@ make
 `PanelRecon` has two subcommands:
 
 1. `index`: build panel index files (`.2bit`) from BED panels and a reference FASTA.
-2. `find`: scan FASTQ reads against those indexes and rank panels.
+2. `find`: scan FASTQ reads against `.2bit`/`.bit` indexes and rank panels.
 
 
 ### `1. Index`
@@ -65,6 +91,12 @@ make
 - Default is `1` (disabled, keep all k-mers).
 - Values `> 1` keep minimizers per window and reduce index size.
 
+`bed_list` notes:
+- `--bed_list` must contain one BED path per non-comment line.
+- Blank lines and lines starting with `#` are ignored.
+- Relative paths are resolved relative to the list file.
+- Existing `.2bit` files are skipped when indexing from `--bed_list`.
+
 ### `2. find`
 
 Scan FASTQ reads against panel indexes and write ranking output.
@@ -74,18 +106,43 @@ Example with a paired FASTQ:
 ./PanelRecon find \
   --index_dir /path/to/panel_index_dir \
   --fq1 sample_R1.fastq.gz \
-  --fq2 sample_R2.fastq.gz \
+  --fq2 sample_R2.fastq.gz
 ```
 
-Example with a list of fastqs `--fastq_list`:
+Example with a list of FASTQs `--fastq_list`:
 ```bash
-./PanelRecon find \ 
+./PanelRecon find \
   --index_dir /path/to/panel_index \
   --fastq_list fastq_list.txt \
   --output /path/to/output_ranks.tsv
 ```
 
-`fastq_list.txt` must contain exactly one FASTQ file path per line.
+`fastq_list.txt` must contain exactly one FASTQ file path per non-comment line. Blank lines and lines starting with `#` are ignored.
+
+Example with a TSV file `--fastq_tsv`:
+```bash
+./PanelRecon find \
+  --index_dir /path/to/panel_index \
+  --fastq_tsv samples.tsv \
+  --output /path/to/output_ranks.tsv
+```
+
+`samples.tsv` must contain tab-separated columns:
+
+```tsv
+SAMPLE_A	/path/to/sample_A_R1.fastq.gz	/path/to/sample_A_R2.fastq.gz
+SAMPLE_B	/path/to/sample_B.fastq.gz
+```
+
+Column 1 is the sample name written to the rank output TSV. Column 2 is `fq1`. Column 3 is optional `fq2`.
+
+`find` options:
+- `--min_reads`: warn if fewer than this many reads were scanned. Default: `50000`.
+- `--max_reads`: stop scanning a sample after this many reads unless `--force_paired` applies. Default: `1000000`.
+- `--minimizer_window`: keep minimizers while scanning reads. Default: `10`; use `1` to disable.
+- `--min_kmer_entropy`: skip low-complexity k-mers below this Shannon entropy value. Default: `0.0` disabled; valid range is `0.0` to `2.0`.
+- `--min_score`: minimum final score required to call a valid panel. Default: `0.001`; use `0` to disable.
+- `--force_paired`: scan `fq2` even if `fq1` already reached `--max_reads`.
 
 ## Output
 
@@ -94,5 +151,36 @@ Panel ranking is written to `--output` (default: `panel_ranks.tsv`).
 Example:
 | sample | scanned_reads | best_panel | best_score | score_margin_vs_next | best_panel_covered_kmers | best_panel_covered_kmers_pct |
 |---|---:|---|---:|---:|---:|---:|
-| SAMPLE_A | 100000 | Exome.2bit | 0.6731 | 0.0312 | 129884 | 67.31 |
-| SAMPLE_B | 50000 | GenePanel.2bit | 0.4108 | 0.0457 | 54321 | 41.08 |
+| SAMPLE_A | 100000 | Exome.2bit | 67.31 | 3.12 | 129884 | 67.31 |
+| SAMPLE_B | 50000 | GenePanel.2bit | 41.08 | 4.57 | 54321 | 41.08 |
+| NEG_CTRL | 100000 | none | 0.000003 | 0.000003 | 1 | 0.000002 |
+
+## Evaluation
+
+PanelRecon was evaluated on 57 samples with known expected panel assignments, including
+3 negative controls expected to return `none`. The evaluation scanned each sample at
+1,000, 5,000, 10,000, 30,000, 50,000, and 100,000 reads.
+
+Accuracy improved with read depth and reached 100% at 30,000 reads. At lower read
+depths, some related panels were still difficult to distinguish because limited reads
+covered fewer panel-specific k-mers.
+
+![PanelRecon accuracy by read count](img/evaluation_accuracy_by_read_count.png)
+
+The per-sample heatmap shows correctness for each sample and read depth. Samples are
+grouped by expected gene panel, and the top annotation row shows the expected panel
+for each sample. The negative controls are grouped under the `Negative control` label
+in the expected-panel legend.
+
+![PanelRecon per-sample correctness heatmap](img/evaluation_sample_correctness_heatmap.png)
+
+Runtime increased with the number of reads scanned. Index loading was relatively
+stable across runs, while the find/scanning phase increased with read depth.
+
+![PanelRecon runtime by read count](img/evaluation_runtime_by_read_count.png)
+
+Peak memory stayed nearly constant across read depths, around 3.69 GB in this local
+evaluation. This indicates that memory usage is mostly driven by loading the panel
+k-mer index rather than by the number of reads scanned.
+
+![PanelRecon memory by read count](img/evaluation_memory_by_read_count.png)

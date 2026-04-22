@@ -2,3 +2,6 @@
 *.bed
 RUN20260217-CGC64001/
 *.2bit
+__pycache__/
+*.pyc
+evaluation/read_depth_results/
