@@ -4,46 +4,6 @@
 
 ![PanelRecon overview](img/PanelRecon.png)
 
-## How it works
-
-PanelRecon compares sample k-mers against a precomputed panel k-mer index.
-
-
-### Scoring
-
-For each panel, `find` command calculates:
-- **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`
-- **specificityPrecision** = `panel_weighted_support / total_matched_lookup_kmers`
-
-The score combines those two values within an F-score-like formula:
-
-- `panelCoverage` rewards panels where many indexed k-mers were observed in the sample. It is calculated as `covered_panel_kmers / panel_unique_kmers`, where
- `covered_panel_kmers` represents number of distinct indexed k-mers from that panel that were found in the sample.
-- `specificityPrecision` rewards panels supported by more panel-specific k-mers, where `panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel. A k-mer found in only one panel contributes `1.0`; a k-mer found in four panels contributes `0.25` to each panel.
-
-With `beta = 2`, panel coveraged is weighted twice compared to kmer specificity. This makes the score prefer panels that are broadly covered by the sample, while still penalizing panels whose evidence is mostly shared with many other panels.
-
-- **score** = `100 * (1 + beta^2) * panelCoverage * specificityPrecision / (beta^2 * specificityPrecision + panelCoverage)`
-
-### Second pass
-
-If the top two panels are very close:
-- both must have a positive primary score
-- panel 2 must score at least `95%` of panel 1
-
-PanelRecon then re-scores only that top pair using only k-mers that appear in exactly one of those two panels:
-
-- **pair-specific score** = `covered_pair_specific_kmers / total_pair_specific_kmers`
-
-Those pair-specific scores replace the primary scores for the top two panels before the final ranking is reported.
-
-### Minimum score
-
-PanelRecon only reports a panel call when the final score is at least `--min_score`.
-The default is `0.001`. Scores below this threshold are kept in the output for review,
-but `best_panel` is reported as `none`. This is useful for negative controls, where a
-few shared or noisy k-mers can otherwise force a very weak panel assignment.
-
 ## Installation
 
 - To install `zlib` and `htslib`
@@ -154,6 +114,46 @@ Example:
 | SAMPLE_A | 100000 | Exome.2bit | 67.31 | 3.12 | 129884 | 67.31 |
 | SAMPLE_B | 50000 | GenePanel.2bit | 41.08 | 4.57 | 54321 | 41.08 |
 | NEG_CTRL | 100000 | none | 0.000003 | 0.000003 | 1 | 0.000002 |
+
+## How it works
+
+PanelRecon compares sample k-mers against a precomputed panel k-mer index.
+
+
+### Scoring
+
+For each panel, `find` command calculates:
+- **panelCoverage** = `covered_panel_kmers / panel_unique_kmers`
+- **specificityPrecision** = `panel_weighted_support / total_matched_lookup_kmers`
+
+The score combines those two values within an F-score-like formula:
+
+- `panelCoverage` rewards panels where many indexed k-mers were observed in the sample. It is calculated as `covered_panel_kmers / panel_unique_kmers`, where
+ `covered_panel_kmers` represents number of distinct indexed k-mers from that panel that were found in the sample.
+- `specificityPrecision` rewards panels supported by more panel-specific k-mers, where `panel_weighted_support` is the sum of specificity weights for matched k-mers assigned to a panel. A k-mer found in only one panel contributes `1.0`; a k-mer found in four panels contributes `0.25` to each panel.
+
+With `beta = 2`, panel coveraged is weighted twice compared to kmer specificity. This makes the score prefer panels that are broadly covered by the sample, while still penalizing panels whose evidence is mostly shared with many other panels.
+
+- **score** = `100 * (1 + beta^2) * panelCoverage * specificityPrecision / (beta^2 * specificityPrecision + panelCoverage)`
+
+### Second pass
+
+If the top two panels are very close:
+- both must have a positive primary score
+- panel 2 must score at least `95%` of panel 1
+
+PanelRecon then re-scores only that top pair using only k-mers that appear in exactly one of those two panels:
+
+- **pair-specific score** = `covered_pair_specific_kmers / total_pair_specific_kmers`
+
+Those pair-specific scores replace the primary scores for the top two panels before the final ranking is reported.
+
+### Minimum score
+
+PanelRecon only reports a panel call when the final score is at least `--min_score`.
+The default is `0.001`. Scores below this threshold are kept in the output for review,
+but `best_panel` is reported as `none`. This is useful for negative controls, where a
+few shared or noisy k-mers can otherwise force a very weak panel assignment.
 
 ## Evaluation
 
